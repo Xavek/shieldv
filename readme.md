@@ -19,9 +19,10 @@ The protocol uses a **hybrid architecture** that balances:
 
 ## System Overview
 
+```mermaid
 flowchart TD
 
-    U["User (MetaMask on Horizen L3)"]
+    U["User (MetaMask on Horizen)"]
     D["dApp Frontend"]
 
     subgraph Public_OnChain_Layer
@@ -41,6 +42,7 @@ flowchart TD
     Y["Base Yield Protocols<br/>Morpho / Aave / Pendle"]
 
     U --> D --> V --> R --> TEE --> S --> B --> Y
+```
 
 ---
 
