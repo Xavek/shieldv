@@ -22,8 +22,8 @@ The protocol uses a **hybrid architecture** that balances:
 ```mermaid
 flowchart TD
 
-    U["User (MetaMask on Horizen)"]
-    D["dApp Frontend"]
+    U["User"]
+    D["UI"]
 
     subgraph Public_OnChain_Layer
         V["Shielded Vault Contract<br/>deposit()<br/>Public TVL<br/>Aggregate accounting"]
@@ -133,7 +133,7 @@ TEE Optimization → Attestation → Settlement → Bridge → Deploy
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as dApp
+    participant D as UI
     participant R as Relayer
     participant T as Vela TEE
     participant S as Settlement Contract
