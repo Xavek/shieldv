@@ -17,32 +17,30 @@ The protocol uses a **hybrid architecture** that balances:
 
 ---
 
-## 🔷 System Overview
+## System Overview
 
-```mermaid
 flowchart TD
 
-    U[User (MetaMask on Horizen)]
-    D[dApp Frontend]
+    U["User (MetaMask on Horizen L3)"]
+    D["dApp Frontend"]
 
     subgraph Public_OnChain_Layer
-        V[Shielded Vault Contract\n- deposit()\n- Public TVL\n- Aggregate accounting]
+        V["Shielded Vault Contract<br/>deposit()<br/>Public TVL<br/>Aggregate accounting"]
     end
 
-    R[Relayer / Backend Server\n- Listens to intents\n- Forwards to TEE]
+    R["Relayer / Backend Server<br/>Listens to intents<br/>Forwards to TEE"]
 
     subgraph Private_Core
-        TEE[Vela TEE (AWS Nitro Enclave)\n- Private notes & commitments\n- Merkle tree & state root\n- Balance & yield computation\n- Strategy optimization\n- Stealth address generation\n- Attestation]
+        TEE["Vela TEE (AWS Nitro Enclave)<br/>Private notes<br/>Merkle tree<br/>Balance + yield<br/>Strategy optimization<br/>Attestation"]
     end
 
-    S[Settlement Contract\n- Verify attestation\n- Execute transfers\n- Update state root]
+    S["Settlement Contract<br/>Verify attestation<br/>Execute transfers<br/>Update state root"]
 
-    B[Stargate V2 Bridge\n- Aggregated liquidity transfer]
+    B["Stargate V2 Bridge<br/>Aggregated transfer"]
 
-    Y[Base Yield Protocols\nMorpho / Aave V3 / Pendle]
+    Y["Base Yield Protocols<br/>Morpho / Aave / Pendle"]
 
     U --> D --> V --> R --> TEE --> S --> B --> Y
-```
 
 ---
 
