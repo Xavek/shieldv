@@ -1,12 +1,12 @@
 # Shielded Yield Vault
 
-**Shielded Yield Vault** is a privacy-first, cross-chain yield aggregator built on Horizen that enables users to earn optimized yields on Base—while keeping individual positions completely private.
+**Shielded Yield Vault** is a privacy-first, cross-chain yield aggregator built on Horizen that enables users to earn optimized yields while keeping individual positions completely private.
 
 It combines:
 
-* Confidential computation (TEE)
-* Cross-chain liquidity (Stargate)
-* Automated yield optimization (Base DeFi)
+* Confidential computation
+* Cross-chain liquidity
+* Automated yield optimization
 
 # Technical Architecture
 
@@ -22,28 +22,34 @@ The protocol uses a **hybrid architecture** that balances:
 ```mermaid
 flowchart TD
 
-    U["User"]
-    D["UI"]
+    U["User (Horizen L3)"]
+    D["dApp Frontend"]
 
-    subgraph Public_OnChain_Layer
-        V["Shielded Vault Contract<br/>deposit()<br/>Public TVL<br/>Aggregate accounting"]
+    subgraph Horizen_L3
+        V["Shielded Vault<br/>Commitments + TVL"]
+        S["Settlement Contract<br/>Verify + Execute"]
     end
 
-    R["Relayer / Backend Server<br/>Listens to intents<br/>Forwards to TEE"]
+    R["Relayer / Backend"]
 
     subgraph Private_Core
-        TEE["Vela TEE (AWS Nitro Enclave)<br/>Private notes<br/>Merkle tree<br/>Balance + yield<br/>Strategy optimization<br/>Attestation"]
+        TEE["Vela TEE<br/>Private balances<br/>Strategy + Withdraw batching<br/>Attestation"]
     end
 
-    S["Settlement Contract<br/>Verify attestation<br/>Execute transfers<br/>Update state root"]
+    B["Stargate Bridge<br/>Aggregated transfers"]
 
-    B["Stargate V2 Bridge<br/>Aggregated transfer"]
+    subgraph Base_L2
+        Y["Yield Protocols<br/>Morpho / Aave / Pendle"]
+    end
 
-    Y["Base Yield Protocols<br/>Morpho / Aave / Pendle"]
+    U --> D --> V --> R --> TEE
+    TEE --> S
+    S --> B
+    B --> Y
 
-    U --> D --> V --> R --> TEE --> S --> B --> Y
+    %% Withdraw reverse flow
+    Y --> B --> S --> U
 ```
-
 ---
 
 ## How It Works
@@ -108,7 +114,8 @@ Funds are bridged using **Stargate V2**:
 * Individual user allocations are never exposed
 * Assets are transferred from:
 
-  * Horizen L3 → Base L2
+  * Horizen L3 → Base L2 (while deposit)
+  * Base L2 -> Horizen L3 (while withdraw)
 
 ---
 
@@ -120,10 +127,68 @@ On Base, funds are deployed into **audited DeFi protocols**:
 * Aave V3 (battle-tested liquidity)
 * Pendle (yield tokenization strategies)
 
-Rebalancing and harvesting follow the same flow:
+At the current stage of the ecosystem, Horizen offers very limited opportunities for sustainable on-chain yield generation.
 
-```
-TEE Optimization → Attestation → Settlement → Bridge → Deploy
+* The DeFi landscape is still early and underdeveloped
+* Capital efficiency, limited tokens support and liquidity depth are not yet competitive
+
+#### Current Approach
+
+To ensure users still access best-in-class yields, the protocol
+
+Bridges aggregated liquidity to Base, where:
+* Deep liquidity exists
+* Proven yield strategies are available
+* Generates yield externally
+* Recalls funds back to Horizen during withdrawals
+* Distributes funds privately to users
+
+#### Forward-Looking Design
+
+* More protocols launch
+* Liquidity deepens
+* Native yield opportunities emerge
+
+We will
+* Gradually introduce Horizen-native strategies
+
+### 6. Withdrawals
+* User submits withdraw request
+* Request is sent to TEE via relayer
+
+TEE:
+- Verifies private note
+- Queues request
+
+Multiple requests are:
+- Batched together
+System:
+
+- Unwinds liquidity on Base
+- Bridges funds back to Horizen
+- Settlement contract:
+- Verifies TEE attestations
+- Distributes funds to users
+
+
+#### Full Lifecycle (Deposit + Yield + Withdraw)
+
+```mermaid
+flowchart LR
+
+    U["User"]
+
+    V["Vault (Horizen)<br/>Private deposits"]
+
+    B1["Bridge → Base"]
+
+    Y["Yield Strategies<br/>Morpho / Aave / Pendle"]
+
+    B2["Bridge → Horizen"]
+
+    S["Settlement<br/>Distribute funds"]
+
+    U --> V --> B1 --> Y --> B2 --> S --> U
 ```
 
 ---
@@ -133,28 +198,32 @@ TEE Optimization → Attestation → Settlement → Bridge → Deploy
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as UI
+    participant D as dApp
     participant R as Relayer
     participant T as Vela TEE
-    participant S as Settlement Contract
+    participant Y as Base Protocols
+    participant B as Bridge
+    participant S as Settlement
 
-    U->>D: Request Withdraw (X amount)
-    D->>R: Send Withdraw Intent
-
+    U->>D: Request withdraw
+    D->>R: Send withdraw intent
     R->>T: Forward request
 
     T->>T: Verify private balance
-    T->>T: Compute share + yield
-    T->>T: Generate stealth address
-    T->>T: Update state root
-    T->>T: Produce attestation
+    T->>T: Queue withdrawal
+    T->>T: Batch multiple users
 
-    T-->>R: Return attestation
-    R->>S: Submit attestation
+    T->>Y: Trigger liquidity unwind
 
-    S->>S: Verify attestation
-    S->>S: Transfer funds
-    S-->>U: Funds received (stealth address)
+    Y-->>B: Send funds to bridge
+    B-->>S: Bridge to Horizen
+
+    T->>T: Generate attestations
+
+    R->>S: Submit batch proof
+
+    S->>S: Verify
+    S-->>U: Transfer funds (stealth)
 ```
 
 ---
