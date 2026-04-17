@@ -225,6 +225,9 @@ sequenceDiagram
     S->>S: Verify
     S-->>U: Transfer funds (stealth)
 ```
+# Cryptographic Design
+
+Shielded Yield Vault preserves user privacy using commitments, Merkle trees, nullifiers, and TEE-based confidential compute, while ensuring that sensitive data is never exposed outside trusted boundaries. When a user deposits, they generate a private note (secret, nullifier) and compute a commitment = Hash(secret, nullifier), which is submitted on-chain. To protect the note itself, it is encrypted client-side using the TEE’s public key and stored by the backend in encrypted form, ensuring the backend never has access to plaintext user secrets. All commitments are aggregated into a Merkle tree, allowing the system to track deposits via a single root without revealing individual ownership. During withdrawal, the user initiates a request, and the backend forwards the corresponding encrypted note directly to the TEE, without decrypting it. Inside the TEE, the note is decrypted, the system verifies that the commitment exists in the Merkle tree, checks that the nullifier has not been used before, and computes the correct withdrawable amount including accrued yield. The TEE then produces a cryptographic attestation (signature) authorizing the withdrawal. The on-chain settlement contract verifies this attestation and ensures the nullifier is unused before releasing funds. This design ensures that sensitive data is only ever decrypted inside the TEE, allowing users to withdraw funds privately without revealing their identity, balances, or transaction history, while maintaining strong correctness and security guarantees.
 
 ---
 
