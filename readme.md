@@ -17,115 +17,46 @@ The protocol uses a **hybrid architecture** that balances:
 
 ---
 
-## System Overview
+## Architecture Overview
 
-```mermaid
-flowchart TD
+The protocol uses TEE-managed private state machine. Users submit encrypted intents (deposit/withdraw) signature, which are processed inside a Trusted Execution Environment. The TEE maintains the canonical private state, computes balances and yield, and produces cryptographic attestations that are verified on-chain. The blockchain acts as a settlement and verification layer, while all sensitive computation and accounting happens inside the enclave. Relayers handle gas abstraction and submission, and a Processor contract acts as the synchronization point between on-chain funds and off-chain private state.
 
-    U["User (Horizen L3)"]
-    D["dApp Frontend"]
-
-    subgraph Horizen_L3
-        V["Shielded Vault<br/>Commitments + TVL"]
-        S["Settlement Contract<br/>Verify + Execute"]
-    end
-
-    R["Relayer / Backend"]
-
-    subgraph Private_Core
-        TEE["Vela TEE<br/>Private balances<br/>Strategy + Withdraw batching<br/>Attestation"]
-    end
-
-    B["Stargate Bridge<br/>Aggregated transfers"]
-
-    subgraph Base_L2
-        Y["Yield Protocols<br/>Morpho / Aave / Pendle"]
-    end
-
-    U --> D --> V --> R --> TEE
-    TEE --> S
-    S --> B
-    B --> Y
-
-    %% Withdraw reverse flow
-    Y --> B --> S --> U
-```
 ---
 
 ## How It Works
 
-### 1. Private Deposits (Horizen)
+### 1. Deposit (Horizen)
 
-Users deposit assets into a **Shielded Vault Contract** on Horizen L3.
-
-* Deposits are **not stored as public balances**
-* Instead, they are represented as **cryptographic commitments (private notes)**
-* Public chain only sees:
-
-  * Total Value Locked (TVL)
-  * Aggregate pool movements
+The user signs a gasless intent (EIP 2612) describing the deposit and encrypts it using the TEE’s public key. This encrypted payload is submitted alongside a transaction to the Processor contract, which executes an ERC20 transferFrom to lock funds on-chain (pool contract) and stores the encrypted blob. At this point, the chain guarantees that funds are secured, but no private state has yet been updated. TEE workers later ingest the encrypted payload, decrypt it inside the enclave, verify the user’s signature, and update the internal private balance state. A new state root is computed and signed, and the attestation is submitted back on-chain to finalize the state transition.
 
 ---
 
-### 2. Confidential Strategy Engine (Vela TEE)
+### 2. Withdraw (Horizen)
 
-At the core of the system is a **Vela Trusted Execution Environment (TEE)** powered by AWS Nitro Enclaves.
-
-Inside the TEE:
-
-* Private user balances are reconstructed from notes
-* Market conditions are analyzed
-* Funds are **dynamically allocated** across:
-
-  * Morpho Blue
-  * Aave V3
-  * Pendle
-
-Key guarantees:
-
-* No raw user data leaves the enclave
-* Strategy logic runs in **hardware-isolated execution**
-* Outputs are **cryptographically attested**
+The user submits an encrypted withdraw intent, which is forwarded to the TEE. Inside the enclave, the system decrypts the request, verifies ownership, computes the withdrawable balance including yield, and debits the private state. Withdrawals are batched to improve efficiency and privacy. The TEE then generates a signed attestation authorizing the withdrawal. This attestation is submitted on-chain, where the Processor contract verifies it and executes the ERC20 transfer to the user (from pool contract). This ensures that funds are only released after a valid, attested state transition. All withdraw intents are batched at a fixed window and made available after bridged back to horizen with no user action required.
 
 ---
 
-### 3. Attested On-Chain Settlement
+### 3. Relayer
 
-Only a **verified instruction** exits the TEE.
-
-* The **Settlement Contract**:
-
-  * Verifies the TEE attestation
-  * Executes the requested action
-  * Updates the public state root
-
-This ensures:
-
-* No unauthorized fund movement
-* Full trust minimization of off-chain compute
+The relayer acts as the **coordination and execution layer** between users, the TEE, and on-chain contracts, enabling a seamless and gas-abstracted experience. It receives user-signed intents for deposits and withdrawals, ensures they are properly formatted, and submits them on-chain or forwards them to the TEE as required. In the deposit flow, the relayer sends the encrypted payload to the Processor contract along with the transaction that locks user funds. In the withdraw flow, it routes encrypted intents to the TEE, receives the resulting attestation, and submits it to the on-chain contract for verification and settlement. The relayer does not access plaintext user data or perform any sensitive computation—it simply transports encrypted payloads and signed attestations across system boundaries. By handling transaction submission, batching, and optional gas sponsorship, the relayer significantly improves UX while maintaining a clean separation between **user intent, confidential computation, and on-chain execution**.
 
 ---
 
-### 4. Cross-Chain Liquidity Movement
+### 4. Yield Generation on Base
 
 Funds are bridged using **Stargate V2**:
 
-* Only **aggregated pool funds** are moved
+* Only **aggregated pool funds** are moved from the pool
 * Individual user allocations are never exposed
 * Assets are transferred from:
 
   * Horizen L3 → Base L2 (while deposit)
   * Base L2 -> Horizen L3 (while withdraw)
 
----
-
-### 5. Yield Generation on Base
-
-On Base, funds are deployed into **audited DeFi protocols**:
+On Base, funds are deployed into **DeFi protocols**:
 
 * Morpho (efficient lending markets)
-* Aave V3 (battle-tested liquidity)
-* Pendle (yield tokenization strategies)
 
 At the current stage of the ecosystem, Horizen offers very limited opportunities for sustainable on-chain yield generation.
 
@@ -152,45 +83,6 @@ Bridges aggregated liquidity to Base, where:
 We will
 * Gradually introduce Horizen-native strategies
 
-### 6. Withdrawals
-* User submits withdraw request
-* Request is sent to TEE via relayer
-
-TEE:
-- Verifies private note
-- Queues request
-
-Multiple requests are:
-- Batched together
-System:
-
-- Unwinds liquidity on Base
-- Bridges funds back to Horizen
-- Settlement contract:
-- Verifies TEE attestations
-- Distributes funds to users
-
-
-#### Full Lifecycle (Deposit + Yield + Withdraw)
-
-```mermaid
-flowchart LR
-
-    U["User"]
-
-    V["Vault (Horizen)<br/>Private deposits"]
-
-    B1["Bridge → Base"]
-
-    Y["Yield Strategies<br/>Morpho / Aave / Pendle"]
-
-    B2["Bridge → Horizen"]
-
-    S["Settlement<br/>Distribute funds"]
-
-    U --> V --> B1 --> Y --> B2 --> S --> U
-```
-
 ---
 
 ## Withdraw Flow
@@ -198,36 +90,33 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant D as dApp
     participant R as Relayer
-    participant T as Vela TEE
+    participant T as TEE Enclave
     participant Y as Base Protocols
     participant B as Bridge
-    participant S as Settlement
+    participant P as Processor Contract
 
-    U->>D: Request withdraw
-    D->>R: Send withdraw intent
-    R->>T: Forward request
+    U->>R: Sign + Encrypt Withdraw Intent
+    R->>T: Forward Encrypted Payload
 
-    T->>T: Verify private balance
-    T->>T: Queue withdrawal
-    T->>T: Batch multiple users
+    T->>T: Decrypt and verify intent
+    T->>T: Compute balance + yield
+    T->>T: Batch withdrawals
 
     T->>Y: Trigger liquidity unwind
-
     Y-->>B: Send funds to bridge
-    B-->>S: Bridge to Horizen
+    B-->>P: Bridge funds to Horizen
 
-    T->>T: Generate attestations
+    T->>R: Return attestation (signed state)
+    R->>P: Submit attestation
 
-    R->>S: Submit batch proof
-
-    S->>S: Verify
-    S-->>U: Transfer funds (stealth)
+    P->>P: Verify attestation
+    P-->>U: Transfer funds
 ```
+
 # Cryptographic Design
 
-Shielded Yield Vault preserves user privacy using commitments, Merkle trees, nullifiers, and TEE-based confidential compute, while ensuring that sensitive data is never exposed outside trusted boundaries. When a user deposits, they generate a private note (secret, nullifier) and compute a commitment = Hash(secret, nullifier), which is submitted on-chain. To protect the note itself, it is encrypted client-side using the TEE’s public key and stored by the backend in encrypted form, ensuring the backend never has access to plaintext user secrets. All commitments are aggregated into a Merkle tree, allowing the system to track deposits via a single root without revealing individual ownership. During withdrawal, the user initiates a request, and the backend forwards the corresponding encrypted note directly to the TEE, without decrypting it. Inside the TEE, the note is decrypted, the system verifies that the commitment exists in the Merkle tree, checks that the nullifier has not been used before, and computes the correct withdrawable amount including accrued yield. The TEE then produces a cryptographic attestation (signature) authorizing the withdrawal. The on-chain settlement contract verifies this attestation and ensures the nullifier is unused before releasing funds. This design ensures that sensitive data is only ever decrypted inside the TEE, allowing users to withdraw funds privately without revealing their identity, balances, or transaction history, while maintaining strong correctness and security guarantees.
+The system relies on encrypted intents, TEE attestation, and state roots rather than user-held cryptographic objects. Users sign structured messages using EIP-2612, ensuring intent authenticity, and encrypt them so only the TEE can read them. The TEE acts as a confidential state machine, reconstructing balances and computing transitions securely. Each state transition produces a signed state root, representing the entire system state. On-chain contracts verify these attestations using hardware-backed proofs, ensuring that only valid transitions are accepted. This design removes the need for users to manage secrets while still preserving strong privacy guarantees.
 
 ---
 
@@ -254,9 +143,7 @@ This creates a **privacy-preserving yet auditable system**.
 
 ---
 
-# Transparency for Compliance & Trust
-
-The protocol is designed to be **compliance-friendly without sacrificing privacy**.
+# Overall Transparency for Trust
 
 Anyone can verify on-chain:
 
