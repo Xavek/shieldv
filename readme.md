@@ -43,20 +43,17 @@ The relayer acts as the **coordination and execution layer** between users, the 
 
 ---
 
-### 4. Yield Generation on Base
+### 4. Yield Generation
 
-Funds are bridged using **Stargate V2**:
+Funds are bridged using Stargate V2:
 
-* Only **aggregated pool funds** are moved from the pool
+* Only aggregated pool funds are moved from the pool
 * Individual user allocations are never exposed
-* Assets are transferred from:
 
-  * Horizen L3 → Base L2 (while deposit)
-  * Base L2 -> Horizen L3 (while withdraw)
+Funds are deployed into **DeFi protocols**:
 
-On Base, funds are deployed into **DeFi protocols**:
-
-* Morpho (efficient lending markets)
+* Morpho
+* Pendle
 
 At the current stage of the ecosystem, Horizen offers very limited opportunities for sustainable on-chain yield generation.
 
@@ -65,9 +62,8 @@ At the current stage of the ecosystem, Horizen offers very limited opportunities
 
 #### Current Approach
 
-To ensure users still access best-in-class yields, the protocol
+To ensure users still access best-in-class yields, the protocol diversifies
 
-Bridges aggregated liquidity to Base, where:
 * Deep liquidity exists
 * Proven yield strategies are available
 * Generates yield externally
@@ -92,7 +88,7 @@ sequenceDiagram
     participant U as User
     participant R as Relayer
     participant T as TEE Enclave
-    participant Y as Base Protocols
+    participant Y as Yield Protocols
     participant B as Bridge
     participant P as Processor Contract
 
